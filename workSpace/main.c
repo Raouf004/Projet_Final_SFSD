@@ -783,3 +783,165 @@ void ChargerFichierDansMemoire(char *nomFich, Bloc **memoire, int *nbBlocs) {
     printf("Fichier charg� dans la m�moire secondaire avec succ�s !\n");
     fclose(F);
 }
+int main() {
+    // Initialize structures and memory
+    initialiser_disque(1024, sizeof(Bloc));
+    Fichier *fichier = (Fichier *)malloc(sizeof(Fichier));
+    if (fichier == NULL) {
+        printf("Erreur d'allocation de mémoire pour le fichier\n");
+        return EXIT_FAILURE;
+    }
+
+    // Initialize allocation file
+    allocationFile = fopen("allocation.dat", "wb+");
+    if (allocationFile == NULL) {
+        printf("Erreur lors de la création du fichier d'allocation\n");
+        free(fichier);
+        return EXIT_FAILURE;
+    }
+
+    // Initialize table allocation
+    initialiser_table_allocation();
+
+    int choix;
+    char nouveauNom[MAX_FILENAME];
+    int idRecherche;
+    bool trouv;
+    int i, j, c;
+    int enrgAsupp;
+
+    do {
+        printf("\n=== Menu Principal ===\n");
+        printf("1. Créer un nouveau fichier\n");
+        printf("2. Afficher l'état de la mémoire secondaire\n");
+        printf("3. Afficher les métadonnées des fichiers\n");
+        printf("4. Rechercher un enregistrement par ID\n");
+        printf("5. Insérer un nouvel enregistrement\n");
+        printf("6. Supprimer un enregistrement\n");
+        printf("7. Supprimer un fichier\n");
+        printf("8. Renommer un fichier\n");
+        printf("9. Quitter\n");
+        printf("Choisissez une option : ");
+        scanf("%d", &choix);
+
+        switch (choix) {
+            case 1: {
+                create_file(fichier);
+                mise_a_jour_table_allocation_apres_creation(fichier);
+                miseAJourAllocationCompacte(allocationFile);
+                char nom = Lirecar(fichier, 1);
+                int nbrB = Lirecar(fichier, 2);
+                ChargerFichierDansMemoire(&nom, &memoire, nbrB);
+                compactage();
+                miseAJourAllocationCompacte(allocationFile);
+                break;
+            }
+            case 2:
+                afficher_table_allocation();
+                break;
+            case 3: {
+                printf("Les metadonnees des fichiers sont :\n");
+                for (int i = 1; i <= 6; i++) {
+                    Lirecar(fichier, i);
+                }
+                break;
+            }
+            case 4: {
+                printf("Veuillez saisir l'ID de l'enregistrement à rechercher : ");
+                scanf("%d", &idRecherche);
+
+                if (fichier->organisation_globale == MODE_CONTIGUE) {
+                    if (fichier->organisation_interne == 0) {
+                        int p[2];
+                        RhercheEnregistrementContNonOrd(fichier->bloc, *fichier, p, idRecherche);
+                    } else {
+                        trouv = false;
+                        i = j = c = 0;
+                        RechercheEnregistrementContOrd(fichier, trouv, &i, &j, c);
+                    }
+                } else {
+                    if (fichier->organisation_interne == 0) {
+                        trouv = false;
+                        i = j = c = 0;
+                        RechercheEnregistrementChaineeNonOrd(fichier, &trouv, &i, &j, c);
+                    } else {
+                        trouv = false;
+                        i = j = c = 0;
+                        RechercheEnregistrementChaineeOrd(fichier, &trouv, &i, &j, c);
+                    }
+                }
+                break;
+            }
+            case 5: {
+                gestionDespace((int *)disque, NBR_BLOCS, (Enregistrement){0}, sizeof(Bloc));
+                Meta fm;
+                if (fichier->organisation_interne == 0) {
+                    insertion_enregNonTrie(fichier, &fm);
+                } else {
+                    Enregistrement nouvel_enr;
+                    printf("Veuillez saisir l'ID de l'enregistrement : ");
+                    scanf("%d", &nouvel_enr.id);
+                    printf("Veuillez saisir les données de l'enregistrement : ");
+                    scanf("%s", nouvel_enr.data);
+                    Fichier temp;
+                    inserer_enregTrie(fichier, &temp, nouvel_enr, fichier->nb_enregistrements);
+                }
+                miseAjourAllocation(fichier, 0, 1);
+                updateMeta(fichier, 1, 0);
+                LireFichier(fichier->nom);
+                break;
+            }
+            case 6: {
+                printf("Veuillez saisir l'ID de l'enregistrement à supprimer : ");
+                scanf("%d", &enrgAsupp);
+                suplogiqueEnregistremen(fichier->nom, enrgAsupp);
+                supphy(fichier->nom, "");  // Empty string as we're using ID-based deletion
+                defragment(fichier);
+                miseAJourAllocation(allocationFile, 0, 0);
+                updateMeta(fichier, 1, 0);
+                LireFichier(fichier->nom);
+                break;
+            }
+            case 7: {
+                remove(fichier->nom);
+                compactage();
+                miseAJourAllocationCompacte(allocationFile);
+                break;
+            }
+            case 8: {
+                printf("Veuillez saisir le nouveau nom du fichier : ");
+                scanf("%s", nouveauNom);
+                renommerFichier(fichier->nom, nouveauNom);
+                updateMeta(fichier, 1, 0);
+                Lirecar(fichier, 1);
+                break;
+            }
+            case 9: {
+                vider_MS();
+                choix = 10;  // Exit the loop
+                break;
+            }
+            default:
+                printf("Option invalide. Veuillez réessayer.\n");
+        }
+    } while (choix < 10);
+
+    // Cleanup
+    if (memoire != NULL) {
+        free(memoire);
+    }
+    if (fichier != NULL) {
+        // Free individual blocks
+        for (int i = 0; i < fichier->nb_enregistrements; i++) {
+            if (fichier->bloc[i] != NULL) {
+                free(fichier->bloc[i]);
+            }
+        }
+        free(fichier);
+    }
+    if (allocationFile != NULL) {
+        fclose(allocationFile);
+    }
+
+    return EXIT_SUCCESS;
+}
